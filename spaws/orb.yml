@@ -1,0 +1,67 @@
+# This code is licensed from CircleCI to the user under the MIT license. See
+# https://circleci.com/orbs/registry/licensing for details.
+version: 2.1
+
+orbs:
+  aws-s3: circleci/aws-s3@1.0.0
+executors:
+  aws-executor:
+    docker:
+      - image: circleci/python:3.7.1
+jobs:
+  load-config:
+    description: Loads a config file from S3
+    parameters:
+      bucket:
+        description: "S3 bucket to pull from"
+        type: string
+        default: "$CONFIG_BUCKET"
+      environment:
+        description: "Which environment's config file"
+        type: string
+        default: "testing"
+      filename:
+        description: "Source config file name"
+        type: string
+        default: "config.toml"
+      target-filename:
+        description: "Target config file name"
+        type: string
+        default: "config.toml"
+    executor: aws-executor
+    steps:
+      - aws-s3/copy:
+          from: 's3://<< parameters.bucket >>/$CIRCLE_PROJECT_REPONAME/<< parameters.environment >>/<< parameters.filename >>'
+          to: '<< parameters.target-filename >>'
+      - persist_to_workspace:
+          root: ./
+          paths:
+            - << parameters.target-filename >>
+  deploy:
+    description: Deploys a build tarfile to a deployment artifact bucket
+    executor: aws-executor
+    parameters:
+      bucket:
+        description: "S3 bucket to deploy to"
+        type: string
+        default: "$ARTIFACT_BUCKET"
+      tarfile:
+        description: "Name of build tarfile (should end in .tar.gz)"
+        type: string
+        default: "build.tar.gz"
+      working-dir:
+        description: "Working directory"
+        type: string
+        default: "~/repo"
+    working_directory: << parameters.working-dir >>
+    steps:
+      - attach_workspace:
+          at: workspace
+      - aws-s3/copy:
+          from: '<< parameters.working-dir >>/workspace/<< parameters.tarfile >>'
+          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz'
+      - run: echo "$CIRCLE_BUILD_NUM.tar.gz" > << parameters.working-dir >>/workspace/latest.txt
+      - run: aws s3api put-object-tagging --bucket << parameters.bucket >> --key builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz --tagging "TagSet=[{Key=checksum,Value=$CIRCLE_SHA1}]"
+      - aws-s3/copy:
+          from: '<< parameters.working-dir >>/workspace/latest.txt'
+          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/latest.txt'

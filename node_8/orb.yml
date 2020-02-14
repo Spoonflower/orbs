@@ -1,0 +1,44 @@
+# This code is licensed from CircleCI to the user under the MIT license. See
+# https://circleci.com/orbs/registry/licensing for details.
+version: 2.1
+
+orbs:
+  aws-s3: circleci/aws-s3@1.0.0
+executors:
+  project-executor:
+    docker:
+      - image: spoonflower/ubuntu-xenial-node-8:0.0.1
+jobs:
+  build:
+    description: Build and Test a Spoonflower NodeJS project
+    executor: project-executor
+    steps:
+      - checkout
+      - attach_workspace:
+          at: workspace
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "package.json" }}
+      - run: npm install
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{ checksum "package.json" }}
+      - run:
+          name: Security Audit
+          command: npm audit || true
+      - run:
+          name: Make build
+          command: npm run build
+      - run:
+          name: Run tests
+          command: npm test
+      - run: 
+          name: Create build tarball
+          command: npm run archive
+      - store_artifacts:
+          path: ~/repo/build.tar.gz
+      - persist_to_workspace:
+          root: ~/repo
+          paths:
+            - build.tar.gz      
