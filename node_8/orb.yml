@@ -12,10 +12,11 @@ jobs:
   build:
     description: Build and Test a Spoonflower NodeJS project
     executor: project-executor
+    working_directory: ~/repo/code
     steps:
       - checkout
       - attach_workspace:
-          at: workspace
+          at: /tmp/workspace
       - restore_cache:
           keys:
           - v1-dependencies-{{ checksum "package.json" }}
@@ -27,6 +28,12 @@ jobs:
       - run:
           name: Security Audit
           command: npm audit || true
+      - run:
+          name: Lint
+          command: |
+             if [ -f ./tslint.json ]; then
+                 npm run lint
+             fi
       - run:
           name: Make build
           command: npm run build
@@ -41,16 +48,17 @@ jobs:
       - persist_to_workspace:
           root: ~/repo
           paths:
-            - build.tar.gz      
+            - code
   package:
     description: Publish an NPM package to GitHub
     executor: project-executor
+    working_directory: ~/repo/workspace/code
     steps:
       - attach_workspace:
-          at: workspace
+          at: ~/repo/workspace
       - run:
           name: Authenticate to GitHub Package Manager
-          command: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" > ~/repo/.npmrc
+          command: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" > .npmrc
       - run:
           name: Version Bump
           command: | 
