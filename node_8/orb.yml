@@ -2,8 +2,19 @@
 # https://circleci.com/orbs/registry/licensing for details.
 version: 2.1
 
-orbs:
-  aws-s3: circleci/aws-s3@1.0.0
+aliases:
+  - &step_attachws
+    attach_workspace:
+      at: /home/circleci
+  - &step_npmauth
+    run:
+      name: Authenticate to GitHub Package Manager
+      command: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" > .npmrc
+  - &step_restorecache
+    restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "package.json" }}
+
 executors:
   project-executor:
     docker:
@@ -15,11 +26,9 @@ jobs:
     working_directory: ~/repo/code
     steps:
       - checkout
-      - attach_workspace:
-          at: /tmp/workspace
-      - restore_cache:
-          keys:
-          - v1-dependencies-{{ checksum "package.json" }}
+      - *step_attachws
+      - *step_restorecache
+      - *step_npmauth
       - run: npm install
       - save_cache:
           paths:
@@ -36,7 +45,14 @@ jobs:
              fi
       - run:
           name: Make build
-          command: npm run build
+          command: | 
+             if [ -f ./.circleci/ci.sh ]; then
+                echo "Running ./.circleci/ci.sh"
+                ./.circleci/ci.sh 
+             else
+                echo "./.circleci/ci.sh was not found. Running npm run build"
+                npm run build
+             fi
       - run:
           name: Run tests
           command: npm test
@@ -54,11 +70,8 @@ jobs:
     executor: project-executor
     working_directory: ~/repo/workspace/code
     steps:
-      - attach_workspace:
-          at: ~/repo/workspace
-      - run:
-          name: Authenticate to GitHub Package Manager
-          command: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" > .npmrc
+      - *step_attachws
+      - *step_npmauth
       - run:
           name: Version Bump
           command: | 
