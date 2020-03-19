@@ -3,17 +3,35 @@
 version: 2.1
 
 aliases:
-  - &step_attachws
-    attach_workspace:
-      at: /home/circleci
+  - &save
+    save_cache:
+      name: Save Temporary Workspace
+      key: v-{{ .Environment.CIRCLE_WORKFLOW_ID }}-{{ .Environment.CIRCLE_SHA1 }}
+      paths:
+        - ~/code
+  - &load
+    restore_cache:
+      keys:
+        - v-{{ .Environment.CIRCLE_WORKFLOW_ID }}-{{ .Environment.CIRCLE_SHA1 }}
   - &step_npmauth
     run:
       name: Authenticate to GitHub Package Manager
-      command: echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" > .npmrc
+      command: |
+         echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
   - &step_restorecache
     restore_cache:
-          keys:
-          - v1-dependencies-{{ checksum "package.json" }}
+      keys:
+        - npmmodules-{{ checksum "package.json" }}
+  - &step_savecache
+    save_cache:
+      name: Save node_modules cache
+      key: npmmodules-{{ checksum "package.json" }}
+      paths:
+        - node_modules
+
+job_defaults: &defaults
+  working_directory: ~/code
+  executor: project-executor
 
 executors:
   project-executor:
@@ -21,19 +39,14 @@ executors:
       - image: spoonflower/ubuntu-xenial-node-8:0.0.2
 jobs:
   build:
+    <<: *defaults
     description: Build and Test a Spoonflower NodeJS project
-    executor: project-executor
-    working_directory: ~/repo/code
     steps:
       - checkout
-      - *step_attachws
       - *step_restorecache
       - *step_npmauth
       - run: npm install
-      - save_cache:
-          paths:
-            - node_modules
-          key: v1-dependencies-{{ checksum "package.json" }}
+      - *step_savecache
       - run:
           name: Security Audit
           command: npm audit || true
@@ -60,17 +73,40 @@ jobs:
           name: Create build tarball
           command: npm run archive
       - store_artifacts:
-          path: ~/repo/build.tar.gz
-      - persist_to_workspace:
-          root: ~/repo
-          paths:
-            - code
-  package:
-    description: Publish an NPM package to GitHub
-    executor: project-executor
-    working_directory: ~/repo/workspace/code
+          path: ~/code/build.tar.gz
+      - *save
+  package_s3:
+    description: Deploys a build tarfile to a deployment artifact bucket
+    executor: aws-executor
+    parameters:
+      bucket:
+        description: "S3 bucket to deploy to"
+        type: string
+        default: "$ARTIFACT_BUCKET"
+      tarfile:
+        description: "Name of build tarfile (should end in .tar.gz)"
+        type: string
+        default: "build.tar.gz"
+      working-dir:
+        description: "Working directory"
+        type: string
+        default: "~/code"
+    working_directory: << parameters.working-dir >>
     steps:
-      - *step_attachws
+      - *step_restorecache
+      - aws-s3/copy:
+          from: '<< parameters.working-dir >>/workspace/<< parameters.tarfile >>'
+          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz'
+      - run: echo "$CIRCLE_BUILD_NUM.tar.gz" > << parameters.working-dir >>/workspace/latest.txt
+      - run: aws s3api put-object-tagging --bucket << parameters.bucket >> --key builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz --tagging "TagSet=[{Key=checksum,Value=$CIRCLE_SHA1}]"
+      - aws-s3/copy:
+          from: '<< parameters.working-dir >>/workspace/latest.txt'
+          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/latest.txt'
+  package:
+    <<: *defaults
+    description: Publish an NPM package to GitHub
+    steps:
+      - *load
       - *step_npmauth
       - run:
           name: Version Bump
