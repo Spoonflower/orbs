@@ -2,6 +2,22 @@
 # https://circleci.com/orbs/registry/licensing for details.
 version: 2.1
 
+orbs:
+  aws-s3: circleci/aws-s3@1.0.0
+
+executors:
+  aws-executor:
+    docker:
+      - image: circleci/python:3.7.1
+  project-executor:
+    docker:
+      - image: spoonflower/ubuntu-xenial-node-8:0.0.2
+  test-executors:
+    docker:
+      - image: spoonflower/ubuntu-xenial-node-8:0.0.2
+      - image: postgres:latest
+      - image: redis:latest
+
 aliases:
   - &save
     save_cache:
@@ -33,10 +49,6 @@ job_defaults: &defaults
   working_directory: ~/code
   executor: project-executor
 
-executors:
-  project-executor:
-    docker:
-      - image: spoonflower/ubuntu-xenial-node-8:0.0.2
 jobs:
   build:
     <<: *defaults
@@ -93,7 +105,7 @@ jobs:
         default: "~/code"
     working_directory: << parameters.working-dir >>
     steps:
-      - *step_restorecache
+      - *load
       - aws-s3/copy:
           from: '<< parameters.working-dir >>/workspace/<< parameters.tarfile >>'
           to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz'
