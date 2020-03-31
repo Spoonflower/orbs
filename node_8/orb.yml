@@ -33,8 +33,8 @@ aliases:
     run:
       name: Authenticate to GitHub Package Manager
       command: |
-	if [ -z "${GITHUB_TOKEN}" ]; then echo "No GITHUB_TOKEN available. Did you set CircleCI context correctly?" && exit 1; fi
-	echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
+        if [ -z "${GITHUB_TOKEN}" ]; then echo "No GITHUB_TOKEN available. Did you set CircleCI context correctly?" && exit 1; fi
+        echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
   - &step_restorecache
     restore_cache:
       keys:
