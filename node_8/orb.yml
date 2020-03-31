@@ -33,7 +33,8 @@ aliases:
     run:
       name: Authenticate to GitHub Package Manager
       command: |
-         echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
+	if [ -z "${GITHUB_TOKEN}" ]; then echo "No GITHUB_TOKEN available. Did you set CircleCI context correctly?" && exit 1; fi
+	echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
   - &step_restorecache
     restore_cache:
       keys:
@@ -84,36 +85,33 @@ jobs:
       - run: 
           name: Create build tarball
           command: npm run archive
+      - run:
+          name: Create build tarball
+          command: |
+            npm run archive
+            chmod 777 ~/code/build.tar.gz
+      - *save
       - store_artifacts:
           path: ~/code/build.tar.gz
-      - *save
-  package_s3:
-    description: Deploys a build tarfile to a deployment artifact bucket
+          destination: $CIRCLE_BUILD_NUM.tar.gz
+      - persist_to_workspace:
+          root: /root
+          paths:
+            - code/build.tar.gz
+  persist:
     executor: aws-executor
-    parameters:
-      bucket:
-        description: "S3 bucket to deploy to"
-        type: string
-        default: "$ARTIFACT_BUCKET"
-      tarfile:
-        description: "Name of build tarfile (should end in .tar.gz)"
-        type: string
-        default: "build.tar.gz"
-      working-dir:
-        description: "Working directory"
-        type: string
-        default: "~/code"
-    working_directory: << parameters.working-dir >>
     steps:
-      - *load
+      - attach_workspace:
+          at: /tmp
       - aws-s3/copy:
-          from: '<< parameters.working-dir >>/workspace/<< parameters.tarfile >>'
-          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz'
-      - run: echo "$CIRCLE_BUILD_NUM.tar.gz" > << parameters.working-dir >>/workspace/latest.txt
-      - run: aws s3api put-object-tagging --bucket << parameters.bucket >> --key builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz --tagging "TagSet=[{Key=checksum,Value=$CIRCLE_SHA1}]"
+          from: '/tmp/code/build.tar.gz'
+          to: 's3://$ARTIFACT_BUCKET/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz'
+      - run: echo "$CIRCLE_BUILD_NUM.tar.gz" > /tmp/code/latest.txt
+      - run: aws s3api put-object-tagging --bucket $ARTIFACT_BUCKET --key builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz --tagging "TagSet=[{Key=checksum,Value=$CIRCLE_SHA1}]"
       - aws-s3/copy:
-          from: '<< parameters.working-dir >>/workspace/latest.txt'
-          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/latest.txt'
+          from: '/tmp/code/latest.txt'
+          to: 's3://$ARTIFACT_BUCKET/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/latest.txt'
+
   package:
     <<: *defaults
     description: Publish an NPM package to GitHub
