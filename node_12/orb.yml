@@ -1,0 +1,135 @@
+# This code is licensed from CircleCI to the user under the MIT license. See
+# https://circleci.com/orbs/registry/licensing for details.
+version: 2.1
+
+orbs:
+  aws-s3: circleci/aws-s3@1.0.0
+
+executors:
+  aws-executor:
+    docker:
+      - image: circleci/python:3.7.1
+  project-executor:
+    docker:
+      - image: 773459762593.dkr.ecr.us-east-1.amazonaws.com/base/ubuntu-xenial-node-12:latest
+        aws_auth:
+          aws_access_key_id: $AWS_ACCESS_KEY_ID
+          aws_secret_access_key: $AWS_SECRET_ACCESS_KEY
+  test-executors:
+    docker:
+      - image: 773459762593.dkr.ecr.us-east-1.amazonaws.com/base/ubuntu-xenial-node-12:latest
+        aws_auth:
+          aws_access_key_id: $AWS_ACCESS_KEY_ID
+          aws_secret_access_key: $AWS_SECRET_ACCESS_KEY
+      - image: postgres:latest
+      - image: redis:latest
+
+aliases:
+  - &save
+    save_cache:
+      name: Save Temporary Workspace
+      key: v-{{ .Environment.CIRCLE_WORKFLOW_ID }}-{{ .Environment.CIRCLE_SHA1 }}
+      paths:
+        - ~/code
+  - &load
+    restore_cache:
+      keys:
+        - v-{{ .Environment.CIRCLE_WORKFLOW_ID }}-{{ .Environment.CIRCLE_SHA1 }}
+  - &step_npmauth
+    run:
+      name: Authenticate to GitHub Package Manager
+      command: |
+        if [ -z "${GITHUB_TOKEN}" ]; then echo "No GITHUB_TOKEN available. Did you set CircleCI context correctly?" && exit 1; fi
+        echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
+  - &step_restorecache
+    restore_cache:
+      keys:
+        - npmmodules-{{ checksum "package.json" }}
+  - &step_savecache
+    save_cache:
+      name: Save node_modules cache
+      key: npmmodules-{{ checksum "package.json" }}
+      paths:
+        - node_modules
+
+job_defaults: &defaults
+  working_directory: ~/code
+  executor: project-executor
+
+jobs:
+  build:
+    <<: *defaults
+    description: Build and Test a Spoonflower NodeJS project
+    steps:
+      - checkout
+      - *step_restorecache
+      - *step_npmauth
+      - run: npm install
+      - *step_savecache
+      - run:
+          name: Security Audit
+          command: npm audit || true
+      - run:
+          name: Lint
+          command: |
+             if [ -f ./tslint.json ]; then
+                 npm run lint
+             fi
+      - run:
+          name: Make build
+          command: |
+             if [ -f ./.circleci/ci.sh ]; then
+                echo "Running ./.circleci/ci.sh"
+                ./.circleci/ci.sh
+             else
+                echo "./.circleci/ci.sh was not found. Running npm run build"
+                npm run build
+             fi
+      - run:
+          name: Run tests
+          command: npm test
+      - run:
+          name: Create build tarball
+          command: npm run archive
+      - run:
+          name: Create build tarball
+          command: |
+            npm run archive
+            chmod 777 ~/code/build.tar.gz
+      - *save
+      - store_artifacts:
+          path: ~/code/build.tar.gz
+          destination: $CIRCLE_BUILD_NUM.tar.gz
+      - persist_to_workspace:
+          root: /root
+          paths:
+            - code/build.tar.gz
+  persist:
+    executor: aws-executor
+    steps:
+      - attach_workspace:
+          at: /tmp
+      - aws-s3/copy:
+          from: '/tmp/code/build.tar.gz'
+          to: 's3://$ARTIFACT_BUCKET/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz'
+      - run: echo "$CIRCLE_BUILD_NUM.tar.gz" > /tmp/code/latest.txt
+      - run: aws s3api put-object-tagging --bucket $ARTIFACT_BUCKET --key builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz --tagging "TagSet=[{Key=checksum,Value=$CIRCLE_SHA1}]"
+      - aws-s3/copy:
+          from: '/tmp/code/latest.txt'
+          to: 's3://$ARTIFACT_BUCKET/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/latest.txt'
+
+  package:
+    <<: *defaults
+    description: Publish an NPM package to GitHub
+    steps:
+      - *load
+      - *step_npmauth
+      - run:
+          name: Version Bump
+          command: |
+            CURRENT_YEAR=$(date +%Y)
+            CURRENT_MONTH=$(date +%m)
+            sed -i "/version/c\  \"version\": \"${CURRENT_YEAR}.${CURRENT_MONTH}.${CIRCLE_BUILD_NUM}\"," package.json
+      - run:
+          name: Publish package
+          command: npm publish --access restricted
