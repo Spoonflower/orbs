@@ -65,3 +65,52 @@ jobs:
       - aws-s3/copy:
           from: '<< parameters.working-dir >>/workspace/latest.txt'
           to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME/$CIRCLE_BRANCH/latest.txt'
+  split-deploy:
+    description: Deploys two build tarfiles to a deployment artifact bucket
+    executor: aws-executor
+    parameters:
+      bucket:
+        description: "S3 bucket to deploy to"
+        type: string
+      first-tarfile:
+        description: "Name of first build tarfile - should end in .tar.gz"
+        type: string
+        default: "build.tar.gz"
+      second-tarfile:
+        description: "Name of second build tarfile - should end in .tar.gz (defaults to using the same file as the first)"
+        type: string
+        default: "build.tar.gz"
+      first-project-suffix:
+        description: "Name of first project spinoff"
+        type: string
+      second-project-suffix:
+        description: "Name of second project spinoff"
+        type: string
+      working-dir:
+        description: "Working directory"
+        type: string
+        default: "~/repo"
+    working_directory: << parameters.working-dir >>
+    steps:
+      - attach_workspace:
+          at: workspace
+      - run: echo "first deploy"
+      - aws-s3/copy:
+          from: '<< parameters.working-dir >>/workspace/<< parameters.first-tarfile >>'
+          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME-<< parameters.first-project-suffix >>/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz'
+      - run: echo "$CIRCLE_BUILD_NUM.tar.gz" > << parameters.working-dir >>/workspace/latest.txt
+      - run: aws s3api put-object-tagging --bucket << parameters.bucket >> --key builds/$CIRCLE_PROJECT_REPONAME-<< parameters.first-project-suffix >>/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz --tagging "TagSet=[{Key=checksum,Value=$CIRCLE_SHA1}]"
+      - aws-s3/copy:
+          from: '<< parameters.working-dir >>/workspace/latest.txt'
+          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME-<< parameters.first-project-suffix >>/$CIRCLE_BRANCH/latest.txt'
+      - run: echo "second deploy"
+      - aws-s3/copy:
+          from: '<< parameters.working-dir >>/workspace/<< parameters.second-tarfile >>'
+          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME-<< parameters.second-project-suffix >>/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz'
+      - run: echo "$CIRCLE_BUILD_NUM.tar.gz" > << parameters.working-dir >>/workspace/latest.txt
+      - run: aws s3api put-object-tagging --bucket << parameters.bucket >> --key builds/$CIRCLE_PROJECT_REPONAME-<< parameters.second-project-suffix >>/$CIRCLE_BRANCH/$CIRCLE_BUILD_NUM.tar.gz --tagging "TagSet=[{Key=checksum,Value=$CIRCLE_SHA1}]"
+      - aws-s3/copy:
+          from: '<< parameters.working-dir >>/workspace/latest.txt'
+          to: 's3://<< parameters.bucket >>/builds/$CIRCLE_PROJECT_REPONAME-<< parameters.second-project-suffix >>/$CIRCLE_BRANCH/latest.txt'
+          
+
