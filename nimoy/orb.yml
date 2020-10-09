@@ -1,0 +1,51 @@
+# This code is licensed from CircleCI to the user under the MIT license. See
+# https://circleci.com/orbs/registry/licensing for details.
+version: 2.1
+
+orbs:
+  aws-ecr: circleci/aws-ecr@6.12.2
+
+executors:
+    default:
+        description: |
+            CircleCI's Ubuntu-based machine executor VM: https://circleci.com/docs/2.0/executor-types/#using-machine
+        machine:
+            docker_layer_caching: <<parameters.use-docker-layer-caching>>
+            image: <<parameters.image>>
+        parameters:
+            image:
+                default: ubuntu-1604:201903-01
+                type: string
+            use-docker-layer-caching:
+                default: true
+                type: boolean
+
+jobs:
+  build:
+    description: Build and publish Docker image
+    executor: default
+    parameters:
+      repo:
+        description: The name of the ECR Repo
+        default: "apps/${CIRCLE_PROJECT_REPONAME}"
+        type: string
+      tag:
+        description: What should we tag your Docker Image?
+        default: dev
+        type: string
+      dockerfile:
+        description: What is your Dockerfile named?
+        default: Dockerfile
+        type: string
+      folder:
+        description: What build folder should we use for Docker context?
+        default: .
+        type: string
+    steps:
+      - aws-ecr/build-and-push-image:
+          repo: << parameters.repo >>
+          tag: ${CIRCLE_SHA1},${CIRCLE_BUILD_NUM},${CIRCLE_WORKFLOW_JOB_ID},<< parameters.tag >>
+          dockerfile: << parameters.dockerfile >>
+          path: << parameters.folder >>
+          extra-build-args: '--build-arg SHA=${CIRCLE_SHA1} --build-arg githubToken=${GITHUB_TOKEN}'
+          no-output-timeout: 20m
