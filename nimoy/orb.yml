@@ -47,5 +47,5 @@ jobs:
           tag: ${CIRCLE_SHA1},${CIRCLE_BUILD_NUM},${CIRCLE_WORKFLOW_JOB_ID},<< parameters.tag >>
           dockerfile: << parameters.dockerfile >>
           path: << parameters.folder >>
-          extra-build-args: '--build-arg SHA=${CIRCLE_SHA1} --build-arg githubToken=${GITHUB_TOKEN}'
+          extra-build-args: '--build-arg SHA=${CIRCLE_SHA1} --build-arg githubToken=${GITHUB_TOKEN} --build-arg buildNumber=${CIRCLE_BUILD_NUM} --build-arg buildBranch=${CIRCLE_BRANCH}'
           no-output-timeout: 20m
