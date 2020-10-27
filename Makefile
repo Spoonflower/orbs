@@ -1,4 +1,14 @@
 orb=new
+AWS_ACCOUNT_ID:=$(shell aws sts get-caller-identity | jq -r '.Account')
+
+image:
+	docker build -t spoonflower/circleci .
+
+push:
+	ecr-login
+	docker tag spoonflower/circleci:latest $(AWS_ACCOUNT_ID).dkr.ecr.us-east-1.amazonaws.com/base/ci:latest
+	docker push $(AWS_ACCOUNT_ID).dkr.ecr.us-east-1.amazonaws.com/base/ci:latest
+
 new:	
 	mkdir $(orb)
 	cp new/orb.yml $(orb)/orb.yml
