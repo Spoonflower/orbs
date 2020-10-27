@@ -1,0 +1,145 @@
+version: 2.1
+
+commands:
+    nimoy:
+        description: |
+           An opinionated Docker build & push orb with AWS ECR Support.
+        parameters:
+            account-url:
+                default: AWS_ECR_ACCOUNT_URL
+                type: env_var_name
+            dockerfile:
+                default: Dockerfile
+                description: Name of dockerfile to use. Defaults to Dockerfile.
+                type: string
+            executor:
+                default: default
+                description: executor to use for this job
+                type: executor
+            extra-build-args:
+                default: ""
+                description: |
+                    Extra flags to pass to docker build. For examples, see https://docs.docker.com/engine/reference/commandline/build
+                type: string
+            no-output-timeout:
+                default: 10m
+                description: |
+                    The amount of time to allow the docker build command to run before timing out (default is `10m`)
+                type: string
+            path:
+                default: .
+                description: Path to the directory containing your Dockerfile and build context. Defaults to . (working directory).
+                type: string
+            repo:
+                description: Name of an Amazon ECR repository
+                type: string
+            tag:
+                default: latest
+                description: A comma-separated string containing docker image tags to build and push (default = latest)
+                type: string
+
+        steps:
+            - checkout
+            - setup_remote_docker
+            - run:
+                command: |
+                    registry_id=$(echo $<<parameters.account-url>> | sed "s;\..*;;g")
+
+                    #ecr-login
+                    case "$(aws --version)" in
+                    aws-cli/2* )
+                        AWS_ACCOUNT=$(aws sts get-caller-identity | jq -r '.Account')
+                        aws ecr get-login-password | docker login --username AWS --password-stdin ${registry_id};;
+                    *)
+                        $(aws ecr get-login --no-include-email);;
+                    esac
+
+                    docker_tag_args=""
+                    safe_branch="$(echo branch_${CIRCLE_BRANCH}| sed -e 's/[^[:alnum:]_-]/_/g')"
+
+                    # Tag all images with branch_staging, sha, build nums, etc
+                    docker_tags="${safe_branch},${CIRCLE_SHA1},${CIRCLE_BUILD_NUM},${CIRCLE_WORKFLOW_JOB_ID},<< parameters.tag >>"
+                    IFS="," read -ra DOCKER_TAGS \<<< "${docker_tags}"
+                    for tag in "${DOCKER_TAGS[@]}"; do
+                      docker_tag_args="$docker_tag_args -t $<<parameters.account-url>>/<<parameters.repo>>:$tag"
+                    done
+
+                    #build
+                    docker build \
+                        --build-arg AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+                        --build-arg AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+                        --build-arg SHA=${CIRCLE_SHA1} \
+                        --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} \
+                        --build-arg CI_BUILD_NUMBER=${CIRCLE_BUILD_NUM} \
+                        --build-arg CI_REPOSITORY=${CIRCLE_PROJECT_REPONAME} \
+                        --build-arg CI_BUILD_BRANCH=${CIRCLE_BRANCH} \
+                        --ssh default \
+                        <<#parameters.extra-build-args>><<parameters.extra-build-args>><</parameters.extra-build-args>> \
+                        -f <<parameters.path>>/<<parameters.dockerfile>> \
+                        $docker_tag_args \
+                        <<parameters.path>>
+
+                    #push
+                    IFS="," read -ra DOCKER_TAGS \<<< "<< parameters.tag >>"
+                    for tag in "${DOCKER_TAGS[@]}"; do
+                      docker push $<<parameters.account-url>>/<<parameters.repo>>:${tag}
+                    done
+                name: Build docker image
+                no_output_timeout: <<parameters.no-output-timeout>>
+
+executors:
+    default:
+        machine:
+            docker_layer_caching: true
+            image: spoonflower/circleci:latest
+
+jobs:
+    nimoy:
+        executor: <<parameters.executor>>
+        parameters:
+            account-url:
+                default: AWS_ECR_ACCOUNT_URL
+                description: |
+                    Env var storing Amazon ECR account URL that maps to an AWS account, e.g. {awsAccountNum}.dkr.ecr.us-west-2.amazonaws.com defaults to AWS_ECR_ACCOUNT_URL
+                type: env_var_name
+            dockerfile:
+                default: Dockerfile
+                description: Name of dockerfile to use. Defaults to Dockerfile.
+                type: string
+            executor:
+                default: default
+                description: executor to use for this job
+                type: executor
+            extra-build-args:
+                default: ""
+                description: |
+                    Extra flags to pass to docker build. For examples, see https://docs.docker.com/engine/reference/commandline/build
+                type: string
+            no-output-timeout:
+                default: 10m
+                description: |
+                    The amount of time to allow the docker build command to run before timing out. Defaults to '10m'
+                type: string
+            path:
+                default: .
+                description: Path to the directory containing your Dockerfile and build context. Defaults to . (working directory).
+                type: string
+            repo:
+                description: Name of an Amazon ECR repository
+                type: string
+            tag:
+                default: latest
+                description: A comma-separated string containing docker image tags to build and push (default = latest)
+                type: string
+        steps:
+            - nimoy:
+                account-url: <<parameters.account-url>>
+                dockerfile: <<parameters.dockerfile>>
+                extra-build-args: <<parameters.extra-build-args>>
+                no-output-timeout: <<parameters.no-output-timeout>>
+                path: <<parameters.path>>
+                repo: <<parameters.repo>>
+                tag: <<parameters.tag>>
+
+
+

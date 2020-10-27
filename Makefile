@@ -2,12 +2,10 @@ orb=new
 AWS_ACCOUNT_ID:=$(shell aws sts get-caller-identity | jq -r '.Account')
 
 image:
-	docker build -t spoonflower/circleci .
+	docker build -t spoonflower/circleci docker
 
 push:
-	ecr-login
-	docker tag spoonflower/circleci:latest $(AWS_ACCOUNT_ID).dkr.ecr.us-east-1.amazonaws.com/base/ci:latest
-	docker push $(AWS_ACCOUNT_ID).dkr.ecr.us-east-1.amazonaws.com/base/ci:latest
+	docker push spoonflower/circleci:latest
 
 new:	
 	mkdir $(orb)
@@ -20,7 +18,7 @@ test:
 	circleci orb validate $(orb)/orb.yml
 
 publish:
-	circleci orb publish $(orb)/orb.yml spoonflower/$(orb)@dev:first
+	circleci orb publish $(orb)/orb2.yaml spoonflower/$(orb)@dev:first
 
 promote:
 	circleci orb publish promote spoonflower/$(orb)@dev:first patch

@@ -1,0 +1,2 @@
+read inp
+echo $inp | sed -e 's/[^[:alnum:]_-]/_/g'

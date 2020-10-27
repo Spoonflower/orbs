@@ -8,6 +8,8 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
  && rm -f awscliv2.zip \
  && rm -rf ./aws
 
+COPY bin/ /bin/
+
 ENV AWS_DEFAULT_REGION=us-east-1
 ENV AWS_REGION=us-east-1
 

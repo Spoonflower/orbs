@@ -1,0 +1,10 @@
+set -e
+
+case "$(aws --version)" in
+  aws-cli/2* )
+	AWS_ACCOUNT=$(aws sts get-caller-identity | jq -r '.Account')
+        aws ecr get-login-password | docker login --username AWS --password-stdin https://${AWS_ACCOUNT}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com;;
+  *)
+	$(aws ecr get-login --no-include-email);;
+esac
+
