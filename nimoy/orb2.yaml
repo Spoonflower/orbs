@@ -5,8 +5,20 @@ commands:
         description: |
            An opinionated Docker build & push orb with AWS ECR Support.
         parameters:
+            production-branch:
+                default: "master"
+                type: string
+            staging-branch:
+                default: "staging"
+                type: string
             account-url:
                 default: AWS_ECR_ACCOUNT_URL
+                type: env_var_name
+            aws-account-id:
+                default: AWS_ACCOUNT_ID
+                type: env_var_name
+            region:
+                default: AWS_DEFAULT_REGION
                 type: env_var_name
             dockerfile:
                 default: Dockerfile
@@ -33,35 +45,51 @@ commands:
             repo:
                 description: Name of an Amazon ECR repository
                 type: string
-            tag:
-                default: latest
-                description: A comma-separated string containing docker image tags to build and push (default = latest)
-                type: string
+
+
 
         steps:
             - checkout
-            - setup_remote_docker
+            - setup_remote_docker:
+                version: 19.03.13
             - run:
+                environment:
+                  DOCKER_BUILDKIT: 1
                 command: |
-                    registry_id=$(echo $<<parameters.account-url>> | sed "s;\..*;;g")
-
-                    #ecr-login
+                    set -ex
+                    
+                    ECRServer=${<<parameters.aws-account-id>>}.dkr.ecr.${<<parameters.region>>}.amazonaws.com
+                    
                     case "$(aws --version)" in
                     aws-cli/2* )
                         AWS_ACCOUNT=$(aws sts get-caller-identity | jq -r '.Account')
-                        aws ecr get-login-password | docker login --username AWS --password-stdin ${registry_id};;
+                        aws ecr get-login-password | docker login --username AWS --password-stdin $ECRServer
+                        ;;
                     *)
-                        $(aws ecr get-login --no-include-email);;
+                        $(aws ecr get-login --no-include-email)
+                        ;;
                     esac
 
                     docker_tag_args=""
                     safe_branch="$(echo branch_${CIRCLE_BRANCH}| sed -e 's/[^[:alnum:]_-]/_/g')"
 
-                    # Tag all images with branch_staging, sha, build nums, etc
-                    docker_tags="${safe_branch},${CIRCLE_SHA1},${CIRCLE_BUILD_NUM},${CIRCLE_WORKFLOW_JOB_ID},<< parameters.tag >>"
+                    case "${CIRCLE_BRANCH}" in
+                    "<<parameters.production-branch>>")
+                        docker_tags="${safe_branch},${CIRCLE_SHA1},${CIRCLE_BUILD_NUM},${CIRCLE_WORKFLOW_JOB_ID},latest"
+                        ;;
+                    "<<parameters.staging-branch>>")
+                        docker_tags="${safe_branch},${CIRCLE_SHA1},${CIRCLE_BUILD_NUM},${CIRCLE_WORKFLOW_JOB_ID},staging"
+                        ;;
+                    *)
+                        docker_tags="${safe_branch},${CIRCLE_SHA1},${CIRCLE_BUILD_NUM},${CIRCLE_WORKFLOW_JOB_ID}"
+                        ;;
+                    esac
+
+                    echo "Taging this build with docker_tags: ${docker_tags}"
+
                     IFS="," read -ra DOCKER_TAGS \<<< "${docker_tags}"
                     for tag in "${DOCKER_TAGS[@]}"; do
-                      docker_tag_args="$docker_tag_args -t $<<parameters.account-url>>/<<parameters.repo>>:$tag"
+                      docker_tag_args="$docker_tag_args -t $ECRServer/<<parameters.repo>>:$tag"
                     done
 
                     #build
@@ -80,18 +108,18 @@ commands:
                         <<parameters.path>>
 
                     #push
-                    IFS="," read -ra DOCKER_TAGS \<<< "<< parameters.tag >>"
+                    IFS="," read -ra DOCKER_TAGS \<<< "${docker_tags}"
                     for tag in "${DOCKER_TAGS[@]}"; do
-                      docker push $<<parameters.account-url>>/<<parameters.repo>>:${tag}
+                      docker push ${ECRServer}/<<parameters.repo>>:${tag}
                     done
                 name: Build docker image
                 no_output_timeout: <<parameters.no-output-timeout>>
 
 executors:
     default:
-        machine:
-            docker_layer_caching: true
-            image: spoonflower/circleci:latest
+        docker:
+          - image: spoonflower/circleci:latest
+
 
 jobs:
     nimoy:
@@ -139,7 +167,7 @@ jobs:
                 no-output-timeout: <<parameters.no-output-timeout>>
                 path: <<parameters.path>>
                 repo: <<parameters.repo>>
-                tag: <<parameters.tag>>
+
 
 
 

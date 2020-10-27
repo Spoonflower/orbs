@@ -1,4 +1,5 @@
 orb=new
+devVersion=0
 AWS_ACCOUNT_ID:=$(shell aws sts get-caller-identity | jq -r '.Account')
 
 image:
@@ -18,7 +19,7 @@ test:
 	circleci orb validate $(orb)/orb.yml
 
 publish:
-	circleci orb publish $(orb)/orb2.yaml spoonflower/$(orb)@dev:first
+	circleci orb publish $(orb)/orb2.yaml spoonflower/$(orb)@dev:v$(devVersion)
 
 promote:
 	circleci orb publish promote spoonflower/$(orb)@dev:first patch
