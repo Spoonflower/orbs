@@ -11,6 +11,11 @@ commands:
             staging-branch:
                 default: "staging"
                 type: string
+            target:
+                default: artifact
+                type: string
+                description: |
+                    What Docker build stage should be targeted? Default: "artifact"
             account-url:
                 default: AWS_ECR_ACCOUNT_URL
                 type: env_var_name
@@ -43,6 +48,7 @@ commands:
                 description: Path to the directory containing your Dockerfile and build context. Defaults to . (working directory).
                 type: string
             repo:
+                default: ""
                 description: Name of an Amazon ECR repository
                 type: string
 
@@ -57,7 +63,8 @@ commands:
                   DOCKER_BUILDKIT: 1
                 command: |
                     set -ex
-                    
+                    repo="<<parameters.repo>>"
+                    publishFolder=${repo:-apps/${CIRCLE_PROJECT_REPONAME}}
                     ECRServer=${<<parameters.aws-account-id>>}.dkr.ecr.${<<parameters.region>>}.amazonaws.com
                     
                     case "$(aws --version)" in
@@ -85,15 +92,33 @@ commands:
                         ;;
                     esac
 
+                    # Base Build Tag Logic
+                    # if parameters.target == base ... 
+                       # and the branch is the production branch, tag only with :base
+                       # for all else, tag :base-branchName
+                    if [ "<<parameters.target>>" == "base" ]; then
+                        case "${CIRCLE_BRANCH}" in
+                        "<<parameters.production-branch>>")
+                            docker_tags="base"
+                            ;;
+                        *)
+                            docker_tags="base-${safe_branch}"
+                            ;;
+                        esac
+                    fi
+                    
+
                     echo "Taging this build with docker_tags: ${docker_tags}"
 
                     IFS="," read -ra DOCKER_TAGS \<<< "${docker_tags}"
                     for tag in "${DOCKER_TAGS[@]}"; do
-                      docker_tag_args="$docker_tag_args -t $ECRServer/<<parameters.repo>>:$tag"
+                      docker_tag_args="$docker_tag_args -t $ECRServer/${publishFolder}:$tag"
                     done
 
                     #build
                     docker build \
+                        --progress=plain \
+                        --target=<<parameters.target>> \
                         --build-arg AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
                         --build-arg AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
                         --build-arg SHA=${CIRCLE_SHA1} \
@@ -108,11 +133,12 @@ commands:
                         <<parameters.path>>
 
                     #push
+
                     IFS="," read -ra DOCKER_TAGS \<<< "${docker_tags}"
                     for tag in "${DOCKER_TAGS[@]}"; do
-                      docker push ${ECRServer}/<<parameters.repo>>:${tag}
+                      docker push ${ECRServer}/${publishFolder}:${tag}
                     done
-                name: Build docker image
+                name: Build docker <<parameters.target>>
                 no_output_timeout: <<parameters.no-output-timeout>>
 
 executors:
@@ -120,11 +146,24 @@ executors:
         docker:
           - image: spoonflower/circleci:latest
 
-
 jobs:
     nimoy:
         executor: <<parameters.executor>>
         parameters:
+            rebuild-base:
+                default: false
+                type: boolean
+            production-branch:
+                default: "master"
+                type: string
+            staging-branch:
+                default: "staging"
+                type: string
+            target:
+                default: artifact
+                type: string
+                description: |
+                    What Docker build stage should be targeted? Default: "artifact"
             account-url:
                 default: AWS_ECR_ACCOUNT_URL
                 description: |
@@ -153,21 +192,36 @@ jobs:
                 description: Path to the directory containing your Dockerfile and build context. Defaults to . (working directory).
                 type: string
             repo:
+                default: ""
                 description: Name of an Amazon ECR repository
                 type: string
             tag:
                 default: latest
                 description: A comma-separated string containing docker image tags to build and push (default = latest)
                 type: string
+            current-branch:
+                default: unknown
+                type: string
         steps:
+            - when:
+                condition:
+                    or:
+                        - equal: [ << parameters.production-branch >> , << parameters.current-branch >> ]
+                        - << parameters.rebuild-base >>
+                steps:
+                    - nimoy:
+                        account-url: <<parameters.account-url>>
+                        dockerfile: <<parameters.dockerfile>>
+                        extra-build-args: <<parameters.extra-build-args>>
+                        no-output-timeout: <<parameters.no-output-timeout>>
+                        path: <<parameters.path>>
+                        repo: <<parameters.repo>>
+                        target: base
             - nimoy:
-                account-url: <<parameters.account-url>>
-                dockerfile: <<parameters.dockerfile>>
-                extra-build-args: <<parameters.extra-build-args>>
-                no-output-timeout: <<parameters.no-output-timeout>>
-                path: <<parameters.path>>
-                repo: <<parameters.repo>>
-
-
-
-
+                    account-url: <<parameters.account-url>>
+                    dockerfile: <<parameters.dockerfile>>
+                    extra-build-args: <<parameters.extra-build-args>>
+                    no-output-timeout: <<parameters.no-output-timeout>>
+                    path: <<parameters.path>>
+                    repo: <<parameters.repo>>
+                    target: <<parameters.target>>

@@ -1,5 +1,7 @@
 orb=new
-devVersion=0
+orbVersion=$(shell cat $(orb)/latest.txt || echo "")
+randomVersion=$(shell echo $$(( $$RANDOM )))
+ver=0
 AWS_ACCOUNT_ID:=$(shell aws sts get-caller-identity | jq -r '.Account')
 
 image:
@@ -18,10 +20,14 @@ new:
 test:
 	circleci orb validate $(orb)/orb.yml
 
-publish:
-	circleci orb publish $(orb)/orb2.yaml spoonflower/$(orb)@dev:v$(devVersion)
+validate:
+	echo $(randomVersion)
+	circleci orb validate $(orb)/orb$(orbVersion).yml
+
+publish: validate
+	circleci orb publish $(orb)/orb$(orbVersion).yml spoonflower/$(orb)@dev:v$(randomVersion)
 
 promote:
-	circleci orb publish promote spoonflower/$(orb)@dev:first patch
+	circleci orb publish promote spoonflower/$(orb)@dev:v$(ver) patch
 
 .PHONY: new
