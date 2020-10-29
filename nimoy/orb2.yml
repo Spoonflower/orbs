@@ -56,8 +56,6 @@ commands:
 
         steps:
             - checkout
-            - setup_remote_docker:
-                version: 19.03.13
             - run:
                 environment:
                   DOCKER_BUILDKIT: 1
@@ -203,6 +201,8 @@ jobs:
                 default: unknown
                 type: string
         steps:
+            - setup_remote_docker:
+                version: 19.03.13
             - when:
                 condition:
                     or:
