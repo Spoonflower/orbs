@@ -3,7 +3,7 @@
 version: 2.1
 
 orbs:
-  aws-ecr: circleci/aws-ecr@6.12.2
+  aws-ecr: circleci/aws-ecr@8.1.2
 
 executors:
     default:
@@ -14,7 +14,7 @@ executors:
             image: <<parameters.image>>
         parameters:
             image:
-                default: ubuntu-1604:201903-01
+                default: ubuntu-2204:2022.08.1
                 type: string
             use-docker-layer-caching:
                 default: true
