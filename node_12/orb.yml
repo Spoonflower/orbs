@@ -11,13 +11,13 @@ executors:
       - image: circleci/python:3.7.1
   project-executor:
     docker:
-      - image: 773459762593.dkr.ecr.us-east-1.amazonaws.com/base/ubuntu-xenial-node-12:latest
+      - image: 773459762593.dkr.ecr.us-east-1.amazonaws.com/base/ubuntu-xenial-node-12:0.0.1
         aws_auth:
           aws_access_key_id: $AWS_ACCESS_KEY_ID
           aws_secret_access_key: $AWS_SECRET_ACCESS_KEY
   test-executors:
     docker:
-      - image: 773459762593.dkr.ecr.us-east-1.amazonaws.com/base/ubuntu-xenial-node-12:latest
+      - image: 773459762593.dkr.ecr.us-east-1.amazonaws.com/base/ubuntu-xenial-node-12:0.0.1
         aws_auth:
           aws_access_key_id: $AWS_ACCESS_KEY_ID
           aws_secret_access_key: $AWS_SECRET_ACCESS_KEY
