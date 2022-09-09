@@ -142,7 +142,7 @@ commands:
 executors:
     default:
         docker:
-          - image: spoonflower/circleci:latest
+          - image: spoonflower/circleci:0.0.1
 
 jobs:
     nimoy:
